@@ -1,0 +1,51 @@
+import { getConfig } from "./lib/store.js";
+import { syncOnce } from "./lib/sync.js";
+import { enqueueTitles, processTitleQueue, queueLength } from "./lib/title-queue.js";
+import { findUntitled } from "./lib/bookmarks.js";
+
+const SYNC_ALARM = "sync";
+
+async function scheduleSync() {
+  const { intervalMinutes } = await getConfig();
+  await chrome.alarms.create(SYNC_ALARM, { delayInMinutes: 1, periodInMinutes: intervalMinutes });
+}
+
+chrome.runtime.onInstalled.addListener(async ({ reason }) => {
+  await scheduleSync();
+  if (reason === "install") chrome.runtime.openOptionsPage();
+});
+chrome.runtime.onStartup.addListener(scheduleSync);
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === SYNC_ALARM) await syncOnce();
+  else if (alarm.name === "titles") await processTitleQueue();
+});
+
+chrome.action.onClicked.addListener(() => chrome.runtime.openOptionsPage());
+
+const handlers = {
+  async syncNow() {
+    return syncOnce();
+  },
+  async fixTitles() {
+    const ids = await findUntitled();
+    await enqueueTitles(ids);
+    return { queued: ids.length };
+  },
+  async configChanged() {
+    await scheduleSync();
+    return { ok: true };
+  },
+  async status() {
+    return { queueLength: await queueLength() };
+  },
+};
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  const handler = handlers[msg?.type];
+  if (!handler) return false;
+  handler(msg)
+    .then(sendResponse)
+    .catch((e) => sendResponse({ error: e.message }));
+  return true; // keep the channel open for the async reply
+});
