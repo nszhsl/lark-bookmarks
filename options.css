@@ -42,3 +42,27 @@ details { margin: 10px 0; }
 .checklist { display: flex; flex-wrap: wrap; gap: 4px 16px; }
 .checklist label { margin: 2px 0; }
 summary { cursor: pointer; color: #3370ff; }
+
+.panel { border: 1px solid #dee0e3; border-radius: 8px; padding: 16px 20px; margin: 16px 0; }
+h3 { font-size: 14px; margin: 18px 0 4px; }
+.indent { margin-left: 24px; }
+label.switch { font-weight: 500; }
+.summary { margin: 0 0 4px; }
+.summary .sep { color: #c2c5ca; margin: 0 8px; }
+.activity { list-style: none; padding: 0; margin: 8px 0 0; }
+.activity li { display: grid; grid-template-columns: 92px 1fr; gap: 8px; padding: 6px 0; border-top: 1px solid #f0f1f2; }
+.activity li:first-child { border-top: 0; }
+.activity time { color: #8f959e; font-size: 12px; padding-top: 2px; }
+.activity .error { color: #f54a45; }
+.activity details { margin: 2px 0 0; }
+.activity summary { font-size: 12px; }
+.activity ul { margin: 4px 0 0; padding-left: 18px; font-size: 12px; }
+.activity ul li { display: list-item; border: 0; padding: 1px 0; }
+.activity .detail { color: #8f959e; margin-left: 6px; }
+.activity .empty { display: block; color: #8f959e; }
+
+/* Text fields and dropdowns line up in one column. */
+label:has(> input:not([type="checkbox"]):not([type="radio"]):not([type="date"])),
+label:has(> select) { display: grid; grid-template-columns: 120px minmax(0, 340px); align-items: center; }
+label:has(> input:not([type="checkbox"]):not([type="radio"]):not([type="date"])) > input,
+label:has(> select) > select { margin-left: 0; min-width: 0; }

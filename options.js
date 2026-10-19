@@ -2,6 +2,7 @@ import { getConfig, setConfig, getAuth, setAuth, getState, setState } from "./li
 import { connect, REQUIRED_SCOPES, hosts } from "./lib/feishu.js";
 import { listFolders, classifyTargets } from "./lib/bookmarks.js";
 import { testClassify } from "./lib/classify.js";
+import { getLog } from "./lib/log.js";
 
 const $ = (id) => document.getElementById(id);
 const ALL_SITES = { origins: ["<all_urls>"] };
@@ -18,10 +19,6 @@ function flashSaved(id) {
   feedback(id, "已保存 ✓");
   clearTimeout(savedTimers[id]);
   savedTimers[id] = setTimeout(() => feedback(id, ""), 2000);
-}
-
-function formatTime(ms) {
-  return ms ? new Date(ms).toLocaleString() : "还没有";
 }
 
 // ---- step layout: done / current / locked ----
@@ -56,6 +53,8 @@ async function renderSteps() {
   if (!$("step2").dataset.userOpened) $("step2").classList.toggle("collapsed", done.step2 && done.step3);
   $("startChoice").style.display = done.step3 ? "none" : "";
   $("running").style.display = done.step3 ? "" : "none";
+  $("activitySection").style.display = done.step3 ? "" : "none";
+  $("settingsSection").style.display = done.step3 ? "" : "none";
   $("disconnect").style.display = auth ? "" : "none";
   $("connect").textContent = auth ? "重新连接" : "连接飞书";
   $("guide").open = !done.step1;
@@ -166,25 +165,83 @@ $("restart").addEventListener("click", async () => {
 
 // ---- running: status, actions, more settings ----
 
+function relative(ms) {
+  if (!ms) return "还没有";
+  const min = Math.round((Date.now() - ms) / 60000);
+  if (min < 1) return "刚刚";
+  if (min < 60) return `${min} 分钟前`;
+  if (min < 24 * 60) return `${Math.round(min / 60)} 小时前`;
+  return new Date(ms).toLocaleString();
+}
+
+function clock(ms) {
+  const d = new Date(ms);
+  const sameDay = d.toDateString() === new Date().toDateString();
+  const hm = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return sameDay ? hm : `${d.getMonth() + 1}月${d.getDate()}日 ${hm}`;
+}
+
 async function renderRunning() {
   const state = await getState();
   const { queueLength } = await chrome.runtime.sendMessage({ type: "status" });
-  const rows = [
-    `上次同步：${formatTime(state.lastSyncAt)}`,
-    `累计加入书签：${state.addedTotal} 个`,
-    `等待补标题：${queueLength} 个；已补好 ${state.titlesFixed || 0} 个，没抓到 ${state.titlesFailed || 0} 个`,
-  ];
-  if (state.lastError) rows.push(`上次出错：${state.lastError}`);
-  if (state.classifyError) rows.push(`自动分类出错：${state.classifyError}`);
-  $("status").replaceChildren(
-    ...rows.map((text) => {
+  const alarm = await chrome.alarms.get("sync");
+  const parts = [`上次同步：${relative(state.lastSyncAt)}`];
+  if (alarm) parts.push(`下次同步：${clock(alarm.scheduledTime)}`);
+  parts.push(`累计加入 ${state.addedTotal} 个`);
+  if (queueLength) parts.push(`后台正在补标题，还剩 ${queueLength} 个`);
+  $("summary").replaceChildren(
+    ...parts.flatMap((p, i) => (i ? [Object.assign(document.createElement("span"), { className: "sep", textContent: "·" }), p] : [p]))
+  );
+  $("permWarning").style.display = (await chrome.permissions.contains(ALL_SITES)) ? "none" : "";
+  await renderActivity();
+}
+
+// ---- activity log ----
+
+const KIND_LABEL = { sync: "同步", titles: "补标题", classify: "分类", error: "出错" };
+let activityLimit = 20;
+
+async function renderActivity() {
+  const entries = (await getLog()).slice().reverse();
+  const list = $("activity");
+  if (!entries.length) {
+    list.replaceChildren(Object.assign(document.createElement("li"), { className: "empty", textContent: "还没有记录。" }));
+    $("moreActivity").style.display = "none";
+    return;
+  }
+  list.replaceChildren(
+    ...entries.slice(0, activityLimit).map((e) => {
       const li = document.createElement("li");
-      li.textContent = text;
+      const time = Object.assign(document.createElement("time"), { textContent: clock(e.at), title: new Date(e.at).toLocaleString() });
+      const body = document.createElement("div");
+      const text = Object.assign(document.createElement("div"), { textContent: e.text + (e.repeat ? `（这段时间同步了 ${e.repeat} 次，都没有新链接）` : "") });
+      if (e.kind === "error") text.className = "error";
+      body.append(text);
+      if (e.items?.length) {
+        const details = document.createElement("details");
+        details.append(Object.assign(document.createElement("summary"), { textContent: `查看 ${e.items.length + (e.more || 0)} 个` }));
+        const ul = document.createElement("ul");
+        for (const item of e.items) {
+          const row = document.createElement("li");
+          row.append(Object.assign(document.createElement("a"), { href: item.url, target: "_blank", rel: "noreferrer", textContent: item.title || item.url }));
+          if (item.detail) row.append(Object.assign(document.createElement("span"), { className: "detail", textContent: item.detail }));
+          ul.append(row);
+        }
+        if (e.more) ul.append(Object.assign(document.createElement("li"), { textContent: `……还有 ${e.more} 个` }));
+        details.append(ul);
+        body.append(details);
+      }
+      li.append(time, body);
       return li;
     })
   );
-  $("permWarning").style.display = (await chrome.permissions.contains(ALL_SITES)) ? "none" : "";
+  $("moreActivity").style.display = entries.length > activityLimit ? "" : "none";
 }
+
+$("moreActivity").addEventListener("click", () => {
+  activityLimit += 50;
+  renderActivity();
+});
 
 $("grantPerm").addEventListener("click", async () => {
   const granted = await chrome.permissions.request(ALL_SITES);
@@ -257,7 +314,16 @@ function saveClassify() {
     flashSaved("feedback6");
   }, 400);
 }
-for (const id of ["classify", "llmBaseUrl", "llmApiKey", "llmModel"]) $(id).addEventListener("input", saveClassify);
+function renderClassifyFields() {
+  $("classifyFields").style.display = $("classify").checked ? "" : "none";
+  $("testClassify").disabled = !($("llmBaseUrl").value.trim() && $("llmModel").value.trim());
+}
+for (const id of ["classify", "llmBaseUrl", "llmApiKey", "llmModel"]) {
+  $(id).addEventListener("input", () => {
+    renderClassifyFields();
+    saveClassify();
+  });
+}
 
 $("testClassify").addEventListener("click", async () => {
   const config = await getConfig();
@@ -290,7 +356,7 @@ async function init() {
   $("llmBaseUrl").value = config.llmBaseUrl;
   $("llmApiKey").value = config.llmApiKey;
   $("llmModel").value = config.llmModel;
-  $("classifySection").open = config.classify;
+  renderClassifyFields();
   await renderTargets();
   await renderGuide(config.brand);
   await renderSteps();
@@ -298,8 +364,9 @@ async function init() {
 }
 
 chrome.storage.onChanged.addListener((changes) => {
-  if (changes.state || changes.titleQueue) renderRunning();
+  if (changes.state || changes.titleQueue || changes.activity) renderRunning();
   if (changes.auth || changes.config) renderSteps();
 });
 
 await init();
+setInterval(renderRunning, 60_000); // keep "x 分钟前" and the next sync time current

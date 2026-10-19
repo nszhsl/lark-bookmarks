@@ -64,44 +64,51 @@
       <p class="feedback" id="feedback3"></p>
     </div>
     <div class="body" id="running">
-      <ul id="status" class="status"></ul>
+      <p id="summary" class="summary"></p>
       <p id="permWarning" class="warning">还没允许读取网页标题，新书签只会显示网址。<button type="button" id="grantPerm" class="small">允许</button></p>
       <button type="button" id="syncNow">立即同步</button>
       <button type="button" id="fixTitles" class="secondary">补全所有无标题书签</button>
       <p class="feedback" id="feedback4"></p>
-
-
-      <details id="classifySection">
-        <summary>自动分类（可选）</summary>
-        <p>新链接拿到标题后，让大模型从下面勾选的文件夹里挑一个放进去；拿不准的留在收件箱。支持所有兼容 OpenAI 接口的服务，如 DeepSeek、通义千问、Ollama。</p>
-        <label class="radio"><input type="checkbox" id="classify"> 启用自动分类</label>
-        <label>Base URL <input id="llmBaseUrl" placeholder="https://api.deepseek.com/v1"></label>
-        <label>API Key <input id="llmApiKey" type="password" autocomplete="off"></label>
-        <label>模型 <input id="llmModel" placeholder="deepseek-chat"></label>
-        <p>可以放进的文件夹：</p>
-        <div id="targetList" class="checklist"></div>
-        <button type="button" id="testClassify" class="secondary">测试一下</button>
-        <p class="feedback" id="feedback6"></p>
-        <p class="hint">改完自动保存。API Key 会和其他设置一起通过 Chrome 账号同步。</p>
-      </details>
-
-      <details id="more">
-        <summary>更多设置</summary>
-        <label>书签放在 <select id="parentFolder"></select></label>
-        <label>收件箱文件夹名 <input id="inboxName"></label>
-        <label>同步频率
-          <select id="interval">
-            <option value="15">每 15 分钟</option>
-            <option value="30">每 30 分钟</option>
-            <option value="60">每小时</option>
-            <option value="180">每 3 小时</option>
-          </select>
-        </label>
-        <p class="feedback" id="feedback5"></p>
-        <p class="hint">改完自动保存。</p>
-        <button type="button" id="restart" class="link">重新选择从哪天开始同步</button>
-      </details>
     </div>
+  </section>
+
+  <section class="panel" id="activitySection">
+    <h2>运行记录</h2>
+    <p class="hint">插件在这台电脑上做过的事，最新的在最上面。点"查看"能看到具体是哪些链接。</p>
+    <ol id="activity" class="activity"></ol>
+    <button type="button" id="moreActivity" class="link">显示更早的记录</button>
+  </section>
+
+  <section class="panel" id="settingsSection">
+    <h2>设置</h2>
+    <p class="hint">所有设置改完自动保存，并通过 Chrome 账号同步到你的其他电脑。</p>
+
+    <h3>自动分类</h3>
+    <label class="switch"><input type="checkbox" id="classify"> 用大模型把新链接自动放进分类文件夹</label>
+    <p class="hint">新链接拿到标题后，大模型从你勾选的文件夹里挑一个放进去；拿不准的留在收件箱。支持兼容 OpenAI 接口的服务，如 DeepSeek、通义千问、Ollama。开启后，新书签的标题和网址会发给这个服务。</p>
+    <div id="classifyFields" class="indent">
+      <label>Base URL <input id="llmBaseUrl" placeholder="https://api.deepseek.com/v1"></label>
+      <label>API Key <input id="llmApiKey" type="password" autocomplete="off" placeholder="本地 Ollama 可以不填"></label>
+      <label>模型 <input id="llmModel" placeholder="deepseek-chat"></label>
+      <p>可以放进的文件夹：</p>
+      <div id="targetList" class="checklist"></div>
+      <button type="button" id="testClassify" class="secondary">测试一下</button>
+      <p class="feedback" id="feedback6"></p>
+    </div>
+
+    <h3>书签和频率</h3>
+    <label>收件箱放在 <select id="parentFolder"></select></label>
+    <label>收件箱文件夹名 <input id="inboxName"></label>
+    <label>多久同步一次
+      <select id="interval">
+        <option value="15">每 15 分钟</option>
+        <option value="30">每 30 分钟</option>
+        <option value="60">每小时</option>
+        <option value="180">每 3 小时</option>
+      </select>
+    </label>
+    <p class="feedback" id="feedback5"></p>
+    <button type="button" id="restart" class="link">重新选择从哪天开始同步</button>
   </section>
 
   <script type="module" src="options.js"></script>

@@ -2,6 +2,7 @@ import { getConfig } from "./lib/store.js";
 import { syncOnce } from "./lib/sync.js";
 import { enqueueTitles, processTitleQueue, queueLength } from "./lib/title-queue.js";
 import { findUntitled } from "./lib/bookmarks.js";
+import { addLog } from "./lib/log.js";
 
 const SYNC_ALARM = "sync";
 
@@ -30,6 +31,7 @@ const handlers = {
   async fixTitles() {
     const ids = await findUntitled();
     await enqueueTitles(ids);
+    if (ids.length) await addLog("titles", `补全无标题书签：找到 ${ids.length} 个，开始在后台补标题`);
     return { queued: ids.length };
   },
   async configChanged() {

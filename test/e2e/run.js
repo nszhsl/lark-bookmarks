@@ -121,7 +121,7 @@ try {
   options.on("pageerror", (e) => errors.push(e.message));
   // The extension opens its own options tab on install; use a fresh one we control.
   await options.goto(`chrome-extension://${extId}/options.html`);
-  await options.waitForSelector("#status li");
+  await options.waitForSelector("#summary");
 
   // Signed in, but with an expired access token so the first call has to refresh.
   // Settings arrive through sync; the login is this computer's own.
@@ -237,9 +237,21 @@ try {
 
   // 4. options page shows status and threw no errors
   await options.reload();
-  await options.waitForSelector("#status li");
-  const statusText = await options.$eval("#status", (el) => el.textContent);
-  assert.match(statusText, /累计加入书签：6 个/);
+  await options.waitForSelector("#summary");
+  await options.waitForFunction(() => document.querySelector("#summary").textContent.includes("累计加入"));
+  const statusText = await options.$eval("#summary", (el) => el.textContent);
+  assert.match(statusText, /累计加入 6 个/);
+  assert.match(statusText, /下次同步/);
+  const activity = await options.evaluate(() => Array.from(document.querySelectorAll("#activity > li"), (el) => el.textContent));
+  assert.ok(activity.some((a) => a.includes("同步：新增 5 个链接")), "first sync logged: " + JSON.stringify(activity));
+  assert.ok(activity.some((a) => a.includes("补标题：成功")), "title batch logged");
+  assert.ok(activity.some((a) => a.includes("自动分类：放进分类文件夹")), "sorting logged");
+  assert.ok(activity.some((a) => a.includes("去重：删掉了 1 个")), "duplicate cleanup logged");
+  // Sorting fields stay hidden until sorting is switched on.
+  await options.evaluate(() => chrome.storage.sync.get("config").then(({ config }) => chrome.storage.sync.set({ config: { ...config, classify: false } })));
+  await options.reload();
+  await options.waitForSelector("#summary");
+  assert.equal(await options.$eval("#classifyFields", (el) => getComputedStyle(el).display), "none");
   assert.match(await options.$eval("#step2 h2", (el) => el.textContent), /测试用户/);
   assert.deepEqual(errors, [], "no page errors");
 
