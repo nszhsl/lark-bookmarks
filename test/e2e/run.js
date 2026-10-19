@@ -227,7 +227,7 @@ try {
   await options.evaluate(() => chrome.storage.local.set({ mover: false }));
   const callsBefore = calls.length;
   const idle = await options.evaluate(() => chrome.runtime.sendMessage({ type: "syncNow" }));
-  assert.match(idle.error || "", /没有负责搬运/);
+  assert.match(idle.error || "", /没有开启自动同步/);
   assert.equal(calls.length, callsBefore);
   await options.evaluate(() => chrome.storage.local.set({ mover: true }));
 

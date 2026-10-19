@@ -189,8 +189,8 @@ async function renderRunning() {
   $("mover").checked = mover;
   $("syncNow").disabled = !mover;
   $("moverHint").textContent = mover
-    ? "设置会通过 Chrome 账号同步到你的其他电脑，但只需要一台电脑负责搬运，否则同一个链接可能被加两次。"
-    : "这台电脑现在只同步设置，不搬运链接。如果负责搬运的那台电脑不再用了，勾上这里。";
+    ? "只用一台电脑的话保持勾选即可。如果你在多台电脑上装了这个插件，只在其中一台勾选，否则同一个链接可能被加两次；书签会通过 Chrome 同步到其他电脑。"
+    : "这台电脑不会去飞书取新链接，书签由另一台电脑添加后通过 Chrome 同步过来。如果那台电脑不用了，就勾上这里。";
 }
 
 $("grantPerm").addEventListener("click", async () => {
@@ -231,7 +231,7 @@ $("inboxName").addEventListener("change", saveMore);
 $("mover").addEventListener("change", async (e) => {
   await setMover(e.target.checked);
   if (e.target.checked) await chrome.runtime.sendMessage({ type: "configChanged" });
-  feedback("feedback4", e.target.checked ? "这台电脑开始负责搬运 ✓" : "这台电脑不再搬运链接 ✓");
+  feedback("feedback4", e.target.checked ? "这台电脑会自动同步 ✓" : "这台电脑不再自动同步 ✓");
   renderRunning();
 });
 
