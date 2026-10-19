@@ -64,6 +64,8 @@ function feishu(request) {
   }
   if (url.pathname === "/open-apis/im/v1/messages") {
     const start = Number(url.searchParams.get("start_time") || 0) * 1000;
+    // Like Feishu: a start time at or after "now" is rejected.
+    if (start >= Date.now()) return { code: 230001, msg: "Your request contains an invalid request parameter, ext=The end_time is earlier than the start_time." };
     const items = messages.filter((m) => Number(m.create_time) >= start);
     const offset = Number(url.searchParams.get("page_token") || 0);
     const page = items.slice(offset, offset + 3); // small pages to exercise pagination
@@ -176,6 +178,12 @@ try {
   const third = await options.evaluate(() => chrome.runtime.sendMessage({ type: "syncNow" }));
   assert.equal(third.added, 1, "new message synced");
   assert.equal((await bookmarksIn()).length, 6);
+
+  // 3b. "only new links" starts the cursor at now; that must not trip Feishu's start/end check
+  await options.evaluate(() => chrome.storage.local.get("state").then(({ state }) => chrome.storage.local.set({ state: { ...state, cursorMs: Date.now() } })));
+  const fresh = await options.evaluate(() => chrome.runtime.sendMessage({ type: "syncNow" }));
+  assert.equal(fresh.error, undefined, `sync right after "only new links" failed: ${fresh.error}`);
+  assert.equal(fresh.added, 0);
 
   // 4. options page shows status and threw no errors
   await options.reload();
