@@ -124,7 +124,7 @@ try {
   await options.waitForSelector("#status li");
 
   // Signed in, but with an expired access token so the first call has to refresh.
-  // Settings arrive through sync; the login and the "mover" role are this computer's own.
+  // Settings arrive through sync; the login is this computer's own.
   await options.evaluate(
     async (me, base) => {
       await chrome.storage.sync.set({
@@ -135,7 +135,6 @@ try {
       });
       await chrome.storage.local.set({
         auth: { accessToken: "stale", expiresAt: Date.now() - 1000, refreshToken: "rt_initial", openId: me, name: "测试用户" },
-        mover: true,
       });
       // Folders next to the inbox: one sorting target, one excluded holding folder.
       const [tree] = await chrome.bookmarks.getTree();
@@ -223,13 +222,18 @@ try {
   assert.equal(fresh.error, undefined, `sync right after "only new links" failed: ${fresh.error}`);
   assert.equal(fresh.added, 0);
 
-  // 3c. a computer that isn't the mover doesn't touch Feishu
-  await options.evaluate(() => chrome.storage.local.set({ mover: false }));
-  const callsBefore = calls.length;
-  const idle = await options.evaluate(() => chrome.runtime.sendMessage({ type: "syncNow" }));
-  assert.match(idle.error || "", /没有开启自动同步/);
-  assert.equal(calls.length, callsBefore);
-  await options.evaluate(() => chrome.storage.local.set({ mover: true }));
+  // 3c. another computer added the same new link: the later copy is removed on the next pass
+  const inboxBefore = await bookmarksIn();
+  const original = inboxBefore.find((b) => b.url === `${base}/a2`);
+  await options.evaluate(async (url) => {
+    const [first] = await chrome.bookmarks.search({ url });
+    await chrome.bookmarks.create({ parentId: first.parentId, title: "copy from the other computer", url });
+  }, original.url);
+  assert.equal((await bookmarksIn()).filter((b) => b.url === original.url).length, 2);
+  await options.evaluate(() => chrome.runtime.sendMessage({ type: "syncNow" }));
+  const copies = (await bookmarksIn()).filter((b) => b.url === original.url);
+  assert.equal(copies.length, 1, "duplicate removed");
+  assert.equal(copies[0].title, original.title, "the older copy is the one kept");
 
   // 4. options page shows status and threw no errors
   await options.reload();

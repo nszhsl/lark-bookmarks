@@ -1,4 +1,4 @@
-import { getConfig, setConfig, getAuth, setAuth, getState, setState, isMover, setMover } from "./lib/store.js";
+import { getConfig, setConfig, getAuth, setAuth, getState, setState } from "./lib/store.js";
 import { connect, REQUIRED_SCOPES, hosts } from "./lib/feishu.js";
 import { listFolders, classifyTargets } from "./lib/bookmarks.js";
 import { testClassify } from "./lib/classify.js";
@@ -145,7 +145,6 @@ $("start").addEventListener("click", async () => {
   if (mode === "new") await setState({ cursorMs: Date.now() });
   else await setState({ cursorMs: 0 });
   await setConfig({ startMode: mode, syncFrom: mode === "date" ? date : "" });
-  await setMover(true);
 
   $("start").disabled = true;
   feedback("feedback3", "正在同步……", "busy");
@@ -185,12 +184,6 @@ async function renderRunning() {
     })
   );
   $("permWarning").style.display = (await chrome.permissions.contains(ALL_SITES)) ? "none" : "";
-  const mover = await isMover();
-  $("mover").checked = mover;
-  $("syncNow").disabled = !mover;
-  $("moverHint").textContent = mover
-    ? "只用一台电脑的话保持勾选即可。如果你在多台电脑上装了这个插件，只在其中一台勾选，否则同一个链接可能被加两次；书签会通过 Chrome 同步到其他电脑。"
-    : "这台电脑不会去飞书取新链接，书签由另一台电脑添加后通过 Chrome 同步过来。如果那台电脑不用了，就勾上这里。";
 }
 
 $("grantPerm").addEventListener("click", async () => {
@@ -227,13 +220,6 @@ async function saveMore() {
 $("parentFolder").addEventListener("change", saveMore);
 $("interval").addEventListener("change", saveMore);
 $("inboxName").addEventListener("change", saveMore);
-
-$("mover").addEventListener("change", async (e) => {
-  await setMover(e.target.checked);
-  if (e.target.checked) await chrome.runtime.sendMessage({ type: "configChanged" });
-  feedback("feedback4", e.target.checked ? "这台电脑会自动同步 ✓" : "这台电脑不再自动同步 ✓");
-  renderRunning();
-});
 
 // ---- automatic sorting ----
 
@@ -312,7 +298,7 @@ async function init() {
 }
 
 chrome.storage.onChanged.addListener((changes) => {
-  if (changes.state || changes.titleQueue || changes.mover) renderRunning();
+  if (changes.state || changes.titleQueue) renderRunning();
   if (changes.auth || changes.config) renderSteps();
 });
 
