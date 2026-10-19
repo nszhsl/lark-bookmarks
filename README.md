@@ -23,6 +23,10 @@
 3. 点击"加载已解压的扩展程序"，选择本仓库目录。
 4. 设置页会自动打开，按页面上的步骤操作。
 
+插件 ID 是固定的（`mnhgeandhgjjjcbphocmmogmpagfdfkg`），在哪台电脑、哪个文件夹加载都一样，所以设置能跟着 Chrome 账号同步，飞书应用里也只需登记一个重定向地址。
+
+**更新**：`git pull`（或重新下载覆盖），然后在 `chrome://extensions` 里点插件的刷新按钮。
+
 ## 设置
 
 插件通过**你自己的飞书应用**读取消息，不经过任何第三方服务器。只需设置一次：
@@ -34,7 +38,7 @@
    - `im:message.p2p_msg:get_as_user`
    - `im:message:readonly`
    - `im:chat:read`
-4. 在"安全设置 → 重定向 URL"中添加插件设置页上显示的地址（形如 `https://<扩展ID>.chromiumapp.org/`）。
+4. 在"安全设置 → 重定向 URL"中添加 `https://mnhgeandhgjjjcbphocmmogmpagfdfkg.chromiumapp.org/`（设置页上也有显示）。
 5. 创建版本并发布。在公司的飞书里，这一步可能需要管理员审批。
 6. 把 App ID 和 App Secret 填进插件设置页，点击"连接飞书"并授权。
 7. 在设置页点击"允许读取网页标题"。

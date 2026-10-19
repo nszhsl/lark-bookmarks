@@ -1,5 +1,6 @@
 {
   "manifest_version": 3,
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA24NISzzIeisaBVNf7pM47tXcmdwOH2YKTbrX6+R/RBFAI2isp2C13U7XO8qSi699FKniWkajORg+QjaIGe5u6GrfwK//tKUGDMudyY40O/9RofCvukB8OJXBXl3nyGRJQyU+l/lL2FwXryUEHyWdsw8Ej5R8p8HScJYNYVqCh+lRoG4BfqLoPbqf1umlZJbQWCs+2ZfqrBe/PIrMSgoHz82jxJrEqolla/jH2yrnfuOP1qSBse12XqYSYim+bvi+zy4VBALsK1F/lIQsl8sK2mphW/8SV1k6oxfZdNARRmn35RT4hlktBjVHk4enVFpOeHKHEYE9de85C6N6Bj0gBQIDAQAB",
   "name": "飞书收藏到书签",
   "description": "把你在飞书里发给自己的链接，自动存进 Chrome 书签，并补上网页标题。",
   "version": "0.1.0",
