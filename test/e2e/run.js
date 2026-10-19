@@ -40,7 +40,8 @@ const server = createServer((req, res) => {
   res.writeHead(200, { "content-type": page.type }).end(page.body);
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
-const base = `http://127.0.0.1:${server.address().port}`;
+// A public-looking host name (mapped to 127.0.0.1 below) so link checks don't skip it as intranet.
+const base = `http://pages.test:${server.address().port}`;
 
 // --- mock Feishu messages ---
 let nextTime = Date.parse("2026-10-17T10:00:00+08:00");
@@ -103,6 +104,7 @@ const browser = await puppeteer.launch({
   executablePath: process.env.CHROME_PATH || undefined,
   pipe: true,
   enableExtensions: [extDir],
+  args: ["--host-resolver-rules=MAP pages.test 127.0.0.1", "--no-proxy-server"],
 });
 
 let failed = false;
@@ -239,6 +241,40 @@ try {
   const copies = (await bookmarksIn()).filter((b) => b.url === original.url);
   assert.equal(copies.length, 1, "duplicate removed");
   assert.equal(copies[0].title, original.title, "the older copy is the one kept");
+
+  // 3d. 整理收藏夹: a duplicate in the inbox of an already-sorted page, plus an empty folder
+  await options.evaluate(async (url) => {
+    const [tree] = await chrome.bookmarks.getTree();
+    const other = tree.children.find((n) => n.folderType === "other");
+    const inbox = (await chrome.bookmarks.getChildren(other.id)).find((c) => c.title === "收件箱");
+    await chrome.bookmarks.create({ parentId: inbox.id, title: "又存了一次", url });
+    await chrome.bookmarks.create({ parentId: other.id, title: "空的" });
+  }, `${base}/a`);
+  const report = await options.evaluate(() => chrome.runtime.sendMessage({ type: "tidyScan" }));
+  assert.equal(report.duplicates.length, 1, "one duplicated page");
+  assert.equal(report.duplicates[0].keep.folder, "编程开发", "the sorted copy is kept");
+  assert.equal(report.duplicates[0].remove[0].folder, "收件箱");
+  assert.ok(report.emptyFolders.some((f) => f.title === "空的"));
+  assert.ok(!report.emptyFolders.some((f) => f.title === "收件箱"), "the inbox is never treated as empty clutter");
+  assert.ok(report.untitled.some((b) => b.url === `${base}/challenge`));
+  const tidied = await options.evaluate(() => chrome.runtime.sendMessage({ type: "tidyApply", selection: { duplicates: true, emptyFolders: true } }));
+  assert.ok(tidied.done.some((d) => d.includes("删除重复书签 1 个")), JSON.stringify(tidied));
+  const after = await options.evaluate(() => chrome.runtime.sendMessage({ type: "tidyScan" }));
+  assert.equal(after.duplicates.length, 0);
+  assert.ok(!after.emptyFolders.some((f) => f.title === "空的"));
+
+  // 3e. dead-link check runs in the background and reports pages that are gone (/share is a 404 here)
+  await options.evaluate(() => chrome.runtime.sendMessage({ type: "tidyCheckLinks" }));
+  const checkDeadline = Date.now() + 150_000;
+  let checked;
+  while (Date.now() < checkDeadline) {
+    checked = await options.evaluate(() => chrome.runtime.sendMessage({ type: "tidyScan" }));
+    if (checked.linkCheck.checkedAt) break;
+    await sleep(3000);
+  }
+  assert.ok(checked.linkCheck.checkedAt, "link check finished");
+  // /share and /a2 aren't served here (404); every page that exists must not be reported.
+  assert.deepEqual(checked.dead.map((d) => d.url).sort(), [`${base}/a2`, `${base}/share`]);
 
   // 4. options page shows status and threw no errors
   await options.reload();

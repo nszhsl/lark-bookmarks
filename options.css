@@ -39,6 +39,14 @@ button:disabled { opacity: 0.5; cursor: default; }
 .copy code { background: #f5f6f7; padding: 4px 8px; border-radius: 4px; word-break: break-all; }
 .status { padding-left: 18px; margin: 0; }
 details { margin: 10px 0; }
+.tidy-row { padding: 8px 0; border-top: 1px solid #f0f1f2; }
+.tidy-row:first-child { border-top: 0; }
+.tidy-row label { margin: 0; font-weight: 500; }
+.tidy-row .hint { margin-left: 24px; }
+.tidy-row details { margin: 2px 0 0 24px; }
+.tidy-row ul { margin: 4px 0 0; padding-left: 18px; font-size: 12px; max-height: 240px; overflow: auto; }
+.tidy-row .detail { color: #8f959e; margin-left: 6px; }
+#tidyReport { margin-top: 8px; }
 .checklist { display: flex; flex-wrap: wrap; gap: 4px 16px; }
 .checklist label { margin: 2px 0; }
 summary { cursor: pointer; color: #3370ff; }

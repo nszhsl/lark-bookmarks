@@ -3,6 +3,8 @@ import { syncOnce } from "./lib/sync.js";
 import { enqueueTitles, processTitleQueue, queueLength } from "./lib/title-queue.js";
 import { findUntitled } from "./lib/bookmarks.js";
 import { addLog } from "./lib/log.js";
+import { scanBookmarks, applyTidy, startLinkCheck } from "./lib/tidy.js";
+import { processJobs, jobCounts } from "./lib/jobs.js";
 
 const SYNC_ALARM = "sync";
 
@@ -20,6 +22,7 @@ chrome.runtime.onStartup.addListener(scheduleSync);
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === SYNC_ALARM) await syncOnce();
   else if (alarm.name === "titles") await processTitleQueue();
+  else if (alarm.name === "jobs") await processJobs();
 });
 
 chrome.action.onClicked.addListener(() => chrome.runtime.openOptionsPage());
@@ -39,7 +42,16 @@ const handlers = {
     return { ok: true };
   },
   async status() {
-    return { queueLength: await queueLength() };
+    return { queueLength: await queueLength(), jobs: await jobCounts() };
+  },
+  async tidyScan() {
+    return scanBookmarks(await getConfig());
+  },
+  async tidyApply(msg) {
+    return applyTidy(await getConfig(), msg.selection);
+  },
+  async tidyCheckLinks() {
+    return startLinkCheck();
   },
 };
 

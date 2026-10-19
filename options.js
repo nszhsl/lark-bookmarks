@@ -55,6 +55,7 @@ async function renderSteps() {
   $("running").style.display = done.step3 ? "" : "none";
   $("activitySection").style.display = done.step3 ? "" : "none";
   $("settingsSection").style.display = done.step3 ? "" : "none";
+  $("tidySection").style.display = done.step3 ? "" : "none";
   $("disconnect").style.display = auth ? "" : "none";
   $("connect").textContent = auth ? "重新连接" : "连接飞书";
   $("guide").open = !done.step1;
@@ -198,7 +199,7 @@ async function renderRunning() {
 
 // ---- activity log ----
 
-const KIND_LABEL = { sync: "同步", titles: "补标题", classify: "分类", error: "出错" };
+const KIND_LABEL = { sync: "同步", titles: "补标题", classify: "分类", tidy: "整理", error: "出错" };
 let activityLimit = 20;
 
 async function renderActivity() {
@@ -277,6 +278,138 @@ async function saveMore() {
 $("parentFolder").addEventListener("change", saveMore);
 $("interval").addEventListener("change", saveMore);
 $("inboxName").addEventListener("change", saveMore);
+
+// ---- tidy up ----
+
+function itemList(items, describe) {
+  const details = document.createElement("details");
+  details.append(Object.assign(document.createElement("summary"), { textContent: "查看" }));
+  const ul = document.createElement("ul");
+  for (const item of items.slice(0, 300)) {
+    const li = document.createElement("li");
+    const { title, url, detail } = describe(item);
+    li.append(url ? Object.assign(document.createElement("a"), { href: url, target: "_blank", rel: "noreferrer", textContent: title || url }) : title);
+    if (detail) li.append(Object.assign(document.createElement("span"), { className: "detail", textContent: detail }));
+    ul.append(li);
+  }
+  if (items.length > 300) ul.append(Object.assign(document.createElement("li"), { textContent: `……还有 ${items.length - 300} 个` }));
+  details.append(ul);
+  return details;
+}
+
+// One line in the report: a checkbox (or why it can't be ticked), a hint, and the items.
+function tidyRow({ key, label, count, checked, disabledReason, hint, items, describe }) {
+  const row = document.createElement("div");
+  row.className = "tidy-row";
+  const box = Object.assign(document.createElement("input"), { type: "checkbox", checked: checked && !disabledReason && count > 0, disabled: Boolean(disabledReason) || !count });
+  box.dataset.key = key;
+  const lab = document.createElement("label");
+  lab.className = "radio";
+  lab.append(box, ` ${label}：${count} 个`);
+  row.append(lab);
+  const note = disabledReason || hint;
+  if (note) row.append(Object.assign(document.createElement("p"), { className: "hint", textContent: note }));
+  if (count && items) row.append(itemList(items, describe));
+  return row;
+}
+
+async function startLinkCheckClick() {
+  const { queued } = await chrome.runtime.sendMessage({ type: "tidyCheckLinks" });
+  feedback("feedback7", `已开始在后台检查 ${queued} 个链接，可以关掉这个页面`);
+  renderTidy(await chrome.runtime.sendMessage({ type: "tidyScan" }));
+}
+
+function renderTidy(report) {
+  const asBookmark = (b) => ({ title: b.title, url: b.url, detail: b.path });
+  const rows = [
+    tidyRow({
+      key: "duplicates",
+      label: "删除重复的书签",
+      count: report.duplicates.reduce((n, d) => n + d.remove.length, 0),
+      checked: true,
+      hint: "同一个网页存了多份，只保留一份（优先保留已经分好类的那份）。",
+      items: report.duplicates.flatMap((d) => d.remove.map((r) => ({ ...r, keepPath: d.keep.path }))),
+      describe: (r) => ({ title: r.title, url: r.url, detail: `在"${r.path}"，保留"${r.keepPath}"里的` }),
+    }),
+    tidyRow({
+      key: "untitled",
+      label: "给没有标题的书签补标题",
+      count: report.untitled.length,
+      checked: true,
+      hint: "在后台慢慢抓，知乎每个约 3 秒。",
+      items: report.untitled,
+      describe: asBookmark,
+    }),
+    tidyRow({
+      key: "unsorted",
+      label: "把收件箱和待分类里的书签自动分类",
+      count: report.unsorted.length,
+      checked: true,
+      disabledReason: report.canSort ? "" : "要先在下面的设置里开启自动分类并填好大模型。",
+      hint: "用你设置的大模型在后台分；没标题的会在补完标题后再分。",
+      items: report.unsorted,
+      describe: asBookmark,
+    }),
+    tidyRow({
+      key: "emptyFolders",
+      label: "删除空文件夹",
+      count: report.emptyFolders.length,
+      checked: true,
+      items: report.emptyFolders,
+      describe: (f) => ({ title: f.path }),
+    }),
+  ];
+
+  // Dead links need a slow background check first.
+  const lc = report.linkCheck;
+  if (lc.running) {
+    rows.push(Object.assign(document.createElement("div"), { className: "tidy-row", textContent: `正在后台检查打不开的链接：${lc.done} / ${lc.total}。检查完后再点"检查收藏夹"就能看到结果。` }));
+  } else if (lc.checkedAt) {
+    const row = tidyRow({
+      key: "dead",
+      label: "删除打不开的链接",
+      count: report.dead.length,
+      checked: false,
+      hint: `${clock(lc.checkedAt)} 检查的结果。默认不勾选，请先看一眼。`,
+      items: report.dead,
+      describe: (d) => ({ title: d.title, url: d.url, detail: d.reason }),
+    });
+    row.append(Object.assign(document.createElement("button"), { type: "button", className: "link", textContent: "重新检查", onclick: startLinkCheckClick }));
+    rows.push(row);
+  } else {
+    const row = document.createElement("div");
+    row.className = "tidy-row";
+    row.append(`打不开的链接：还没检查过。共 ${report.total} 个书签，在后台检查，大约 ${Math.max(1, Math.round((report.total * 1.5) / 60))} 分钟。`);
+    row.append(Object.assign(document.createElement("button"), { type: "button", className: "small", textContent: "开始检查", onclick: startLinkCheckClick }));
+    rows.push(row);
+  }
+
+  const apply = Object.assign(document.createElement("button"), { type: "button", id: "tidyApply", textContent: "执行选中的整理" });
+  apply.addEventListener("click", applyTidyClick);
+  $("tidyReport").replaceChildren(...rows, apply);
+}
+
+async function applyTidyClick() {
+  const selection = {};
+  for (const box of $("tidyReport").querySelectorAll("input[type=checkbox]")) selection[box.dataset.key] = box.checked;
+  if (!Object.values(selection).some(Boolean)) return feedback("feedback7", "没有勾选任何一项", "error");
+  $("tidyApply").disabled = true;
+  feedback("feedback7", "正在整理……", "busy");
+  const result = await chrome.runtime.sendMessage({ type: "tidyApply", selection });
+  if (result.error) return feedback("feedback7", `整理失败：${result.error}`, "error");
+  feedback("feedback7", result.done.length ? `整理完成 ✓ ${result.done.join("；")}` : "没有需要改动的");
+  renderTidy(await chrome.runtime.sendMessage({ type: "tidyScan" }));
+}
+
+$("tidyScan").addEventListener("click", async () => {
+  $("tidyScan").disabled = true;
+  feedback("feedback7", "正在检查……", "busy");
+  const report = await chrome.runtime.sendMessage({ type: "tidyScan" });
+  $("tidyScan").disabled = false;
+  if (report.error) return feedback("feedback7", `检查失败：${report.error}`, "error");
+  feedback("feedback7", `共 ${report.total} 个书签`);
+  renderTidy(report);
+});
 
 // ---- automatic sorting ----
 
