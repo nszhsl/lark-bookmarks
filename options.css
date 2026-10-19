@@ -22,7 +22,7 @@ h2 { font-size: 16px; margin: 0; display: flex; align-items: center; gap: 10px; 
 
 label { display: block; margin: 8px 0; }
 label.radio { margin: 6px 0; }
-input:not([type="radio"]), select { font: inherit; padding: 4px 8px; margin-left: 8px; min-width: 260px; }
+input:not([type="radio"]):not([type="checkbox"]), select { font: inherit; padding: 4px 8px; margin-left: 8px; min-width: 260px; }
 input[type="date"] { min-width: 0; margin-left: 4px; }
 button { font: inherit; padding: 6px 16px; margin: 8px 8px 0 0; border: 0; border-radius: 6px; background: #3370ff; color: #fff; cursor: pointer; }
 button.secondary { background: #f0f1f2; color: #1f2329; }
@@ -39,4 +39,6 @@ button:disabled { opacity: 0.5; cursor: default; }
 .copy code { background: #f5f6f7; padding: 4px 8px; border-radius: 4px; word-break: break-all; }
 .status { padding-left: 18px; margin: 0; }
 details { margin: 10px 0; }
+.checklist { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.checklist label { margin: 2px 0; }
 summary { cursor: pointer; color: #3370ff; }

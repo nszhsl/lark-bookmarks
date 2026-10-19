@@ -36,7 +36,7 @@
       <label>App ID <input id="appId" autocomplete="off" placeholder="cli_xxxxxxxx"></label>
       <label>App Secret <input id="appSecret" type="password" autocomplete="off"></label>
       <p class="feedback" id="feedback1"></p>
-      <p class="hint">填完自动保存。App Secret 只保存在这台电脑的浏览器里，不会上传或同步。</p>
+      <p class="hint">填完自动保存，并通过 Chrome 账号同步到你的其他电脑。</p>
     </div>
   </section>
 
@@ -69,6 +69,23 @@
       <button type="button" id="syncNow">立即同步</button>
       <button type="button" id="fixTitles" class="secondary">补全所有无标题书签</button>
       <p class="feedback" id="feedback4"></p>
+
+      <label class="radio"><input type="checkbox" id="mover"> 由这台电脑负责把飞书里的链接搬进书签</label>
+      <p class="hint" id="moverHint">设置会通过 Chrome 账号同步到你的其他电脑，但只需要一台电脑负责搬运，否则同一个链接可能被加两次。</p>
+
+      <details id="classifySection">
+        <summary>自动分类（可选）</summary>
+        <p>新链接拿到标题后，让大模型从下面勾选的文件夹里挑一个放进去；拿不准的留在收件箱。支持所有兼容 OpenAI 接口的服务，如 DeepSeek、通义千问、Ollama。</p>
+        <label class="radio"><input type="checkbox" id="classify"> 启用自动分类</label>
+        <label>Base URL <input id="llmBaseUrl" placeholder="https://api.deepseek.com/v1"></label>
+        <label>API Key <input id="llmApiKey" type="password" autocomplete="off"></label>
+        <label>模型 <input id="llmModel" placeholder="deepseek-chat"></label>
+        <p>可以放进的文件夹：</p>
+        <div id="targetList" class="checklist"></div>
+        <button type="button" id="testClassify" class="secondary">测试一下</button>
+        <p class="feedback" id="feedback6"></p>
+        <p class="hint">改完自动保存。API Key 会和其他设置一起通过 Chrome 账号同步。</p>
+      </details>
 
       <details id="more">
         <summary>更多设置</summary>

@@ -1,6 +1,7 @@
-import { getConfig, setConfig, getAuth, setAuth, getState, setState } from "./lib/store.js";
+import { getConfig, setConfig, getAuth, setAuth, getState, setState, isMover, setMover } from "./lib/store.js";
 import { connect, REQUIRED_SCOPES, hosts } from "./lib/feishu.js";
-import { listFolders } from "./lib/bookmarks.js";
+import { listFolders, classifyTargets } from "./lib/bookmarks.js";
+import { testClassify } from "./lib/classify.js";
 
 const $ = (id) => document.getElementById(id);
 const ALL_SITES = { origins: ["<all_urls>"] };
@@ -144,6 +145,7 @@ $("start").addEventListener("click", async () => {
   if (mode === "new") await setState({ cursorMs: Date.now() });
   else await setState({ cursorMs: 0 });
   await setConfig({ startMode: mode, syncFrom: mode === "date" ? date : "" });
+  await setMover(true);
 
   $("start").disabled = true;
   feedback("feedback3", "正在同步……", "busy");
@@ -174,6 +176,7 @@ async function renderRunning() {
     `等待补标题：${queueLength} 个；已补好 ${state.titlesFixed || 0} 个，没抓到 ${state.titlesFailed || 0} 个`,
   ];
   if (state.lastError) rows.push(`上次出错：${state.lastError}`);
+  if (state.classifyError) rows.push(`自动分类出错：${state.classifyError}`);
   $("status").replaceChildren(
     ...rows.map((text) => {
       const li = document.createElement("li");
@@ -182,6 +185,12 @@ async function renderRunning() {
     })
   );
   $("permWarning").style.display = (await chrome.permissions.contains(ALL_SITES)) ? "none" : "";
+  const mover = await isMover();
+  $("mover").checked = mover;
+  $("syncNow").disabled = !mover;
+  $("moverHint").textContent = mover
+    ? "设置会通过 Chrome 账号同步到你的其他电脑，但只需要一台电脑负责搬运，否则同一个链接可能被加两次。"
+    : "这台电脑现在只同步设置，不搬运链接。如果负责搬运的那台电脑不再用了，勾上这里。";
 }
 
 $("grantPerm").addEventListener("click", async () => {
@@ -208,7 +217,7 @@ $("fixTitles").addEventListener("click", async () => {
 
 async function saveMore() {
   await setConfig({
-    parentFolderId: $("parentFolder").value,
+    parentFolderPath: $("parentFolder").value,
     inboxName: $("inboxName").value.trim() || "收件箱",
     intervalMinutes: Number($("interval").value),
   });
@@ -218,6 +227,66 @@ async function saveMore() {
 $("parentFolder").addEventListener("change", saveMore);
 $("interval").addEventListener("change", saveMore);
 $("inboxName").addEventListener("change", saveMore);
+
+$("mover").addEventListener("change", async (e) => {
+  await setMover(e.target.checked);
+  if (e.target.checked) await chrome.runtime.sendMessage({ type: "configChanged" });
+  feedback("feedback4", e.target.checked ? "这台电脑开始负责搬运 ✓" : "这台电脑不再搬运链接 ✓");
+  renderRunning();
+});
+
+// ---- automatic sorting ----
+
+async function renderTargets() {
+  const config = await getConfig();
+  // Show every folder next to the inbox; unchecked ones are never used as targets.
+  const all = await classifyTargets({ ...config, classifyExclude: [] });
+  $("targetList").replaceChildren(
+    ...all.map((f) => {
+      const label = document.createElement("label");
+      const box = Object.assign(document.createElement("input"), { type: "checkbox", checked: !config.classifyExclude.includes(f.title) });
+      box.dataset.name = f.title;
+      box.addEventListener("change", saveClassify);
+      label.append(box, ` ${f.title}`);
+      return label;
+    })
+  );
+  if (!all.length) $("targetList").textContent = "收件箱旁边还没有其他文件夹。";
+}
+
+let classifyTimer;
+function saveClassify() {
+  clearTimeout(classifyTimer);
+  classifyTimer = setTimeout(async () => {
+    const config = await getConfig();
+    const shown = [...$("targetList").querySelectorAll("input")];
+    const hiddenExcluded = config.classifyExclude.filter((n) => !shown.some((b) => b.dataset.name === n));
+    await setConfig({
+      classify: $("classify").checked,
+      llmBaseUrl: $("llmBaseUrl").value.trim(),
+      llmApiKey: $("llmApiKey").value.trim(),
+      llmModel: $("llmModel").value.trim(),
+      classifyExclude: [...hiddenExcluded, ...shown.filter((b) => !b.checked).map((b) => b.dataset.name)],
+    });
+    flashSaved("feedback6");
+  }, 400);
+}
+for (const id of ["classify", "llmBaseUrl", "llmApiKey", "llmModel"]) $(id).addEventListener("input", saveClassify);
+
+$("testClassify").addEventListener("click", async () => {
+  const config = await getConfig();
+  if (!config.llmBaseUrl || !config.llmModel) return feedback("feedback6", "请先填写 Base URL 和模型", "error");
+  if (!(await chrome.permissions.contains(ALL_SITES)) && !(await chrome.permissions.request(ALL_SITES))) {
+    return feedback("feedback6", "需要允许插件访问网络才能调用大模型", "error");
+  }
+  feedback("feedback6", "正在问大模型……", "busy");
+  try {
+    const name = await testClassify(config);
+    feedback("feedback6", `连接正常 ✓ 示例标题"Claude Code 实用技巧：用好 Skills 和 MCP"被分到：${name}`);
+  } catch (e) {
+    feedback("feedback6", `调用失败：${e.message}`, "error");
+  }
+});
 
 // ---- initial render ----
 
@@ -229,16 +298,22 @@ async function init() {
   $("inboxName").value = config.inboxName;
   $("interval").value = String(config.intervalMinutes);
   const folders = await listFolders();
-  $("parentFolder").replaceChildren(new Option("其他书签（默认）", ""), ...folders.map((f) => new Option(f.path, f.id)));
-  $("parentFolder").value = config.parentFolderId;
+  $("parentFolder").replaceChildren(new Option("其他书签（默认）", ""), ...folders.map((f) => new Option(f.label, f.key)));
+  $("parentFolder").value = config.parentFolderPath;
+  $("classify").checked = config.classify;
+  $("llmBaseUrl").value = config.llmBaseUrl;
+  $("llmApiKey").value = config.llmApiKey;
+  $("llmModel").value = config.llmModel;
+  $("classifySection").open = config.classify;
+  await renderTargets();
   await renderGuide(config.brand);
   await renderSteps();
   await renderRunning();
 }
 
 chrome.storage.onChanged.addListener((changes) => {
-  if (changes.state || changes.titleQueue) renderRunning();
-  if (changes.auth) renderSteps();
+  if (changes.state || changes.titleQueue || changes.mover) renderRunning();
+  if (changes.auth || changes.config) renderSteps();
 });
 
 await init();

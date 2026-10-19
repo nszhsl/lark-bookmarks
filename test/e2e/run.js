@@ -21,7 +21,20 @@ const pages = {
   "/gbk": { type: "text/html; charset=gbk", body: Buffer.concat([Buffer.from("<title>"), gbkTitle, Buffer.from("</title>")]) },
   "/challenge": { type: "text/html", body: "<title>Just a moment...</title>" },
 };
+// Mock OpenAI-compatible model: anything titled "页面 A" belongs in 编程开发, the rest stays put.
+const llmCalls = [];
 const server = createServer((req, res) => {
+  if (req.method === "POST" && req.url === "/v1/chat/completions") {
+    let body = "";
+    req.on("data", (d) => (body += d)).on("end", () => {
+      const request = JSON.parse(body);
+      llmCalls.push({ auth: req.headers.authorization, request });
+      const user = request.messages.at(-1).content;
+      const answer = user.includes("标题：页面 A") ? "编程开发" : "收件箱";
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ choices: [{ message: { content: answer } }] }));
+    });
+    return;
+  }
   const page = pages[req.url];
   if (!page) return res.writeHead(404).end("<title>404 Not Found</title>");
   res.writeHead(200, { "content-type": page.type }).end(page.body);
@@ -111,13 +124,27 @@ try {
   await options.waitForSelector("#status li");
 
   // Signed in, but with an expired access token so the first call has to refresh.
+  // Settings arrive through sync; the login and the "mover" role are this computer's own.
   await options.evaluate(
-    (me) =>
-      chrome.storage.local.set({
-        config: { brand: "feishu", appId: "cli_test", appSecret: "secret", inboxName: "收件箱", intervalMinutes: 60, syncFrom: "", startMode: "all" },
+    async (me, base) => {
+      await chrome.storage.sync.set({
+        config: {
+          brand: "feishu", appId: "cli_test", appSecret: "secret", inboxName: "收件箱", intervalMinutes: 60, syncFrom: "", startMode: "all",
+          classify: true, llmBaseUrl: `${base}/v1`, llmApiKey: "sk-test", llmModel: "test-model", classifyExclude: ["待分类（等补完标题）"],
+        },
+      });
+      await chrome.storage.local.set({
         auth: { accessToken: "stale", expiresAt: Date.now() - 1000, refreshToken: "rt_initial", openId: me, name: "测试用户" },
-      }),
-    ME
+        mover: true,
+      });
+      // Folders next to the inbox: one sorting target, one excluded holding folder.
+      const [tree] = await chrome.bookmarks.getTree();
+      const other = tree.children.find((n) => n.folderType === "other");
+      await chrome.bookmarks.create({ parentId: other.id, title: "编程开发" });
+      await chrome.bookmarks.create({ parentId: other.id, title: "待分类（等补完标题）" });
+    },
+    ME,
+    base
   );
 
   const bookmarksIn = () =>
@@ -129,7 +156,7 @@ try {
         for (const c of n.children || []) walk(c, n.url ? path : [...path, n.title]);
       };
       walk(tree, []);
-      return out.filter((b) => b.path.at(-1) === "收件箱");
+      return out.filter((b) => ["收件箱", "编程开发"].includes(b.path.at(-1)));
     });
 
   // 1. first sync
@@ -171,6 +198,17 @@ try {
   for (const [url, title] of Object.entries(want)) assert.equal(inbox.find((b) => b.url === url)?.title, title, `title for ${url}`);
   assert.equal(inbox.find((b) => b.url === `${base}/challenge`)?.title, `${base}/challenge`, "bot-check page title is not used");
 
+  // 2b. automatic sorting: 页面 A went to 编程开发, the rest stayed in the inbox
+  const sortDeadline = Date.now() + 30_000;
+  while (Date.now() < sortDeadline && (await bookmarksIn()).find((b) => b.url === `${base}/a`)?.path.at(-1) !== "编程开发") await sleep(1000);
+  inbox = await bookmarksIn();
+  assert.equal(inbox.find((b) => b.url === `${base}/a`)?.path.at(-1), "编程开发", "sorted by the model");
+  assert.equal(inbox.find((b) => b.url === `${base}/b`)?.path.at(-1), "收件箱", "unsure ones stay in the inbox");
+  assert.ok(llmCalls.length >= 4, "every new link was offered to the model");
+  assert.equal(llmCalls[0].auth, "Bearer sk-test");
+  assert.equal(llmCalls[0].request.model, "test-model");
+  assert.match(llmCalls[0].request.messages[1].content, /文件夹：编程开发\n/, "excluded folders are not offered");
+
   // 3. a second sync adds nothing; a new message is picked up
   const again = await options.evaluate(() => chrome.runtime.sendMessage({ type: "syncNow" }));
   assert.equal(again.added, 0, "nothing re-added");
@@ -180,10 +218,18 @@ try {
   assert.equal((await bookmarksIn()).length, 6);
 
   // 3b. "only new links" starts the cursor at now; that must not trip Feishu's start/end check
-  await options.evaluate(() => chrome.storage.local.get("state").then(({ state }) => chrome.storage.local.set({ state: { ...state, cursorMs: Date.now() } })));
+  await options.evaluate(() => chrome.storage.sync.set({ cursorMs: Date.now() }));
   const fresh = await options.evaluate(() => chrome.runtime.sendMessage({ type: "syncNow" }));
   assert.equal(fresh.error, undefined, `sync right after "only new links" failed: ${fresh.error}`);
   assert.equal(fresh.added, 0);
+
+  // 3c. a computer that isn't the mover doesn't touch Feishu
+  await options.evaluate(() => chrome.storage.local.set({ mover: false }));
+  const callsBefore = calls.length;
+  const idle = await options.evaluate(() => chrome.runtime.sendMessage({ type: "syncNow" }));
+  assert.match(idle.error || "", /没有负责搬运/);
+  assert.equal(calls.length, callsBefore);
+  await options.evaluate(() => chrome.storage.local.set({ mover: true }));
 
   // 4. options page shows status and threw no errors
   await options.reload();
