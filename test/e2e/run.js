@@ -112,7 +112,7 @@ try {
   await options.evaluate(
     (me) =>
       chrome.storage.local.set({
-        config: { brand: "feishu", appId: "cli_test", appSecret: "secret", inboxName: "收件箱", intervalMinutes: 60, syncFrom: "" },
+        config: { brand: "feishu", appId: "cli_test", appSecret: "secret", inboxName: "收件箱", intervalMinutes: 60, syncFrom: "", startMode: "all" },
         auth: { accessToken: "stale", expiresAt: Date.now() - 1000, refreshToken: "rt_initial", openId: me, name: "测试用户" },
       }),
     ME
@@ -182,7 +182,7 @@ try {
   await options.waitForSelector("#status li");
   const statusText = await options.$eval("#status", (el) => el.textContent);
   assert.match(statusText, /累计加入书签：6 个/);
-  assert.match(await options.$eval("#authStatus", (el) => el.textContent), /测试用户/);
+  assert.match(await options.$eval("#step2 h2", (el) => el.textContent), /测试用户/);
   assert.deepEqual(errors, [], "no page errors");
 
   console.log("e2e: all checks passed");

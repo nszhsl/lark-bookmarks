@@ -1,18 +1,74 @@
-import { getConfig, setConfig, getAuth, setAuth, getState } from "./lib/store.js";
+import { getConfig, setConfig, getAuth, setAuth, getState, setState } from "./lib/store.js";
 import { connect, REQUIRED_SCOPES, hosts } from "./lib/feishu.js";
 import { listFolders } from "./lib/bookmarks.js";
 
 const $ = (id) => document.getElementById(id);
 const ALL_SITES = { origins: ["<all_urls>"] };
+const STEP_TITLES = { step1: "填写飞书应用信息", step2: "连接飞书", step3: "开始同步" };
 
-function say(text, isError = false) {
-  $("message").textContent = text;
-  $("message").className = isError ? "message error" : "message";
+function feedback(id, text, kind = "ok") {
+  $(id).textContent = text;
+  $(id).className = kind === "ok" ? "feedback" : `feedback ${kind}`;
+}
+
+// Brief "已保存" next to whatever was just changed.
+const savedTimers = {};
+function flashSaved(id) {
+  feedback(id, "已保存 ✓");
+  clearTimeout(savedTimers[id]);
+  savedTimers[id] = setTimeout(() => feedback(id, ""), 2000);
 }
 
 function formatTime(ms) {
-  return ms ? new Date(ms).toLocaleString() : "从未";
+  return ms ? new Date(ms).toLocaleString() : "还没有";
 }
+
+// ---- step layout: done / current / locked ----
+
+async function renderSteps() {
+  const config = await getConfig();
+  const auth = await getAuth();
+  const done = {
+    step1: Boolean(config.appId && config.appSecret),
+    step2: Boolean(auth),
+    step3: Boolean(config.startMode),
+  };
+  const subtitle = {
+    step1: done.step1 ? ` · ${config.appId}` : "",
+    step2: auth ? ` · 已连接：${auth.name || auth.openId}` : "",
+    step3: done.step3 ? " · 运行中" : "",
+  };
+  let reachedCurrent = false;
+  ["step1", "step2", "step3"].forEach((id, i) => {
+    const el = $(id);
+    const isCurrent = !done[id] && !reachedCurrent;
+    const locked = !done[id] && !isCurrent;
+    if (isCurrent) reachedCurrent = true;
+    el.classList.toggle("done", done[id]);
+    el.classList.toggle("current", isCurrent);
+    el.classList.toggle("locked", locked);
+    el.querySelector(".badge").textContent = done[id] ? "✓" : String(i + 1);
+    el.querySelector("h2").lastChild.textContent = STEP_TITLES[id] + subtitle[id];
+  });
+  // A finished step folds away once the next one is done too; its header reopens it.
+  if (!$("step1").dataset.userOpened) $("step1").classList.toggle("collapsed", done.step1 && done.step2);
+  if (!$("step2").dataset.userOpened) $("step2").classList.toggle("collapsed", done.step2 && done.step3);
+  $("startChoice").style.display = done.step3 ? "none" : "";
+  $("running").style.display = done.step3 ? "" : "none";
+  $("disconnect").style.display = auth ? "" : "none";
+  $("connect").textContent = auth ? "重新连接" : "连接飞书";
+  $("guide").open = !done.step1;
+}
+
+for (const id of ["step1", "step2"]) {
+  $(id).querySelector("h2").addEventListener("click", () => {
+    if (!$(id).classList.contains("done")) return;
+    $(id).dataset.userOpened = "1";
+    $(id).classList.toggle("collapsed");
+  });
+}
+
+// ---- step 1: app credentials, saved as you type ----
 
 async function renderGuide(brand) {
   $("consoleLink").href = hosts(brand).console;
@@ -20,34 +76,102 @@ async function renderGuide(brand) {
   $("scopeList").replaceChildren(
     ...REQUIRED_SCOPES.map(({ scope, label }) => {
       const li = document.createElement("li");
-      li.innerHTML = `<code></code> <span></span>`;
-      li.querySelector("code").textContent = scope;
-      li.querySelector("span").textContent = label;
+      const code = document.createElement("code");
+      code.textContent = scope;
+      li.append(code, ` ${label}`);
       return li;
     })
   );
 }
 
-async function renderAuth() {
-  const auth = await getAuth();
-  $("authStatus").textContent = auth ? `已连接：${auth.name || auth.openId}` : "未连接";
-  $("disconnect").disabled = !auth;
-}
+$("copyRedirect").addEventListener("click", async () => {
+  await navigator.clipboard.writeText($("redirectUrl").textContent);
+  $("copyRedirect").textContent = "已复制 ✓";
+  setTimeout(() => ($("copyRedirect").textContent = "复制"), 2000);
+});
 
-async function renderPermission() {
-  const granted = await chrome.permissions.contains(ALL_SITES);
-  $("permStatus").textContent = granted ? "已允许" : "尚未允许，书签会先以网址作为标题";
-  $("grantPerm").disabled = granted;
+let credTimer;
+function saveCredentialsSoon() {
+  clearTimeout(credTimer);
+  credTimer = setTimeout(async () => {
+    await setConfig({ brand: $("brand").value, appId: $("appId").value.trim(), appSecret: $("appSecret").value.trim() });
+    flashSaved("feedback1");
+    renderSteps();
+  }, 400);
 }
+$("appId").addEventListener("input", saveCredentialsSoon);
+$("appSecret").addEventListener("input", saveCredentialsSoon);
+$("brand").addEventListener("change", (e) => {
+  renderGuide(e.target.value);
+  saveCredentialsSoon();
+});
 
-async function renderStatus() {
+// ---- step 2: connect ----
+
+$("connect").addEventListener("click", async () => {
+  const config = await getConfig();
+  $("connect").disabled = true;
+  feedback("feedback2", '正在打开飞书授权窗口，请在窗口里点"授权"……', "busy");
+  try {
+    await setAuth(await connect(config));
+    feedback("feedback2", "连接成功 ✓");
+  } catch (e) {
+    console.error("connect failed", e);
+    feedback("feedback2", `连接失败：${e.message}`, "error");
+  } finally {
+    $("connect").disabled = false;
+    renderSteps();
+  }
+});
+
+$("disconnect").addEventListener("click", async () => {
+  await setAuth(null);
+  feedback("feedback2", "已断开连接");
+  renderSteps();
+});
+
+// ---- step 3: choose a starting point, then start ----
+
+$("startDate").addEventListener("focus", () => (document.querySelector('input[value="date"]').checked = true));
+
+$("start").addEventListener("click", async () => {
+  const mode = document.querySelector('input[name="startMode"]:checked').value;
+  const date = $("startDate").value;
+  if (mode === "date" && !date) return feedback("feedback3", "请选一个日期", "error");
+
+  // Ask for page access while we still have the click (Chrome requires a user gesture).
+  const granted = await chrome.permissions.request(ALL_SITES);
+  if (mode === "new") await setState({ cursorMs: Date.now() });
+  else await setState({ cursorMs: 0 });
+  await setConfig({ startMode: mode, syncFrom: mode === "date" ? date : "" });
+
+  $("start").disabled = true;
+  feedback("feedback3", "正在同步……", "busy");
+  const result = await chrome.runtime.sendMessage({ type: "syncNow" });
+  $("start").disabled = false;
+  await renderSteps();
+  await renderRunning();
+  if (result?.error) feedback("feedback4", `同步失败：${result.error}`, "error");
+  else {
+    const note = mode === "new" ? "以后你发给自己的链接会自动出现在书签的收件箱里。" : `这次加入了 ${result.added} 个书签。`;
+    feedback("feedback4", `已开始同步 ✓ ${note}${granted ? "" : "（没有允许读取网页标题，书签会先显示网址）"}`);
+  }
+});
+
+$("restart").addEventListener("click", async () => {
+  await setConfig({ startMode: "" });
+  renderSteps();
+});
+
+// ---- running: status, actions, more settings ----
+
+async function renderRunning() {
   const state = await getState();
   const { queueLength } = await chrome.runtime.sendMessage({ type: "status" });
   const rows = [
     `上次同步：${formatTime(state.lastSyncAt)}`,
     `累计加入书签：${state.addedTotal} 个`,
-    `等待补标题：${queueLength} 个`,
-    `已补标题：${state.titlesFixed || 0} 个，没抓到：${state.titlesFailed || 0} 个`,
+    `等待补标题：${queueLength} 个；已补好 ${state.titlesFixed || 0} 个，没抓到 ${state.titlesFailed || 0} 个`,
   ];
   if (state.lastError) rows.push(`上次出错：${state.lastError}`);
   $("status").replaceChildren(
@@ -57,101 +181,64 @@ async function renderStatus() {
       return li;
     })
   );
+  $("permWarning").style.display = (await chrome.permissions.contains(ALL_SITES)) ? "none" : "";
 }
 
-async function renderConfig() {
+$("grantPerm").addEventListener("click", async () => {
+  const granted = await chrome.permissions.request(ALL_SITES);
+  feedback("feedback4", granted ? "已允许读取网页标题 ✓" : "没有获得权限", granted ? "ok" : "error");
+  renderRunning();
+});
+
+$("syncNow").addEventListener("click", async () => {
+  $("syncNow").disabled = true;
+  feedback("feedback4", "正在同步……", "busy");
+  const result = await chrome.runtime.sendMessage({ type: "syncNow" });
+  $("syncNow").disabled = false;
+  if (result?.error) feedback("feedback4", `同步失败：${result.error}`, "error");
+  else feedback("feedback4", result.added ? `同步完成 ✓ 新加入 ${result.added} 个书签` : "同步完成 ✓ 没有新链接");
+  renderRunning();
+});
+
+$("fixTitles").addEventListener("click", async () => {
+  const { queued } = await chrome.runtime.sendMessage({ type: "fixTitles" });
+  feedback("feedback4", queued ? `已开始补标题 ✓ 共 ${queued} 个，在后台慢慢处理，可以关掉这个页面` : "没有找到无标题的书签");
+  renderRunning();
+});
+
+async function saveMore() {
+  await setConfig({
+    parentFolderId: $("parentFolder").value,
+    inboxName: $("inboxName").value.trim() || "收件箱",
+    intervalMinutes: Number($("interval").value),
+  });
+  await chrome.runtime.sendMessage({ type: "configChanged" });
+  flashSaved("feedback5");
+}
+$("parentFolder").addEventListener("change", saveMore);
+$("interval").addEventListener("change", saveMore);
+$("inboxName").addEventListener("change", saveMore);
+
+// ---- initial render ----
+
+async function init() {
   const config = await getConfig();
   $("brand").value = config.brand;
   $("appId").value = config.appId;
   $("appSecret").value = config.appSecret;
   $("inboxName").value = config.inboxName;
   $("interval").value = String(config.intervalMinutes);
-  $("syncFrom").value = config.syncFrom;
-
   const folders = await listFolders();
-  const select = $("parentFolder");
-  select.replaceChildren(new Option("其他书签（默认）", ""), ...folders.map((f) => new Option(f.path, f.id)));
-  select.value = config.parentFolderId;
+  $("parentFolder").replaceChildren(new Option("其他书签（默认）", ""), ...folders.map((f) => new Option(f.path, f.id)));
+  $("parentFolder").value = config.parentFolderId;
   await renderGuide(config.brand);
+  await renderSteps();
+  await renderRunning();
 }
 
-$("brand").addEventListener("change", (e) => renderGuide(e.target.value));
-
-$("copyRedirect").addEventListener("click", async () => {
-  await navigator.clipboard.writeText($("redirectUrl").textContent);
-  say("已复制重定向地址");
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.state || changes.titleQueue) renderRunning();
+  if (changes.auth) renderSteps();
 });
 
-$("saveApp").addEventListener("click", async () => {
-  const appId = $("appId").value.trim();
-  const appSecret = $("appSecret").value.trim();
-  if (!appId || !appSecret) return say("请填写 App ID 和 App Secret", true);
-  await setConfig({ brand: $("brand").value, appId, appSecret });
-  say("已保存，下一步点击\"连接飞书\"");
-});
-
-$("connect").addEventListener("click", async () => {
-  const config = await getConfig();
-  if (!config.appId || !config.appSecret) return say("请先在第 2 步填写并保存应用信息", true);
-  $("connect").disabled = true;
-  say("正在打开飞书授权页……");
-  try {
-    await setAuth(await connect(config));
-    await renderAuth();
-    say("连接成功");
-    chrome.runtime.sendMessage({ type: "syncNow" });
-  } catch (e) {
-    say(`连接失败：${e.message}`, true);
-  } finally {
-    $("connect").disabled = false;
-  }
-});
-
-$("disconnect").addEventListener("click", async () => {
-  await setAuth(null);
-  await renderAuth();
-  say("已断开连接");
-});
-
-$("saveSync").addEventListener("click", async () => {
-  await setConfig({
-    parentFolderId: $("parentFolder").value,
-    inboxName: $("inboxName").value.trim() || "收件箱",
-    intervalMinutes: Number($("interval").value),
-    syncFrom: $("syncFrom").value,
-  });
-  await chrome.runtime.sendMessage({ type: "configChanged" });
-  say("已保存");
-});
-
-$("grantPerm").addEventListener("click", async () => {
-  const granted = await chrome.permissions.request(ALL_SITES);
-  await renderPermission();
-  say(granted ? "已允许读取网页标题" : "没有获得权限，书签会先以网址作为标题", !granted);
-});
-
-$("syncNow").addEventListener("click", async () => {
-  $("syncNow").disabled = true;
-  say("正在同步……");
-  const result = await chrome.runtime.sendMessage({ type: "syncNow" });
-  $("syncNow").disabled = false;
-  if (result?.error) say(`同步失败：${result.error}`, true);
-  else say(`同步完成，新加入 ${result?.added ?? 0} 个书签`);
-  await renderStatus();
-});
-
-$("fixTitles").addEventListener("click", async () => {
-  const { queued } = await chrome.runtime.sendMessage({ type: "fixTitles" });
-  say(queued ? `已把 ${queued} 个无标题书签加入补标题队列，会在后台慢慢处理` : "没有找到无标题的书签");
-  await renderStatus();
-});
-
-chrome.storage.onChanged.addListener(() => {
-  renderStatus();
-  renderAuth();
-});
-
-await renderConfig();
-await renderAuth();
-await renderPermission();
-await renderStatus();
+await init();

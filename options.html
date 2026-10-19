@@ -9,77 +9,84 @@
   <h1>飞书收藏到书签</h1>
   <p class="lead">把你在飞书里发给自己的链接，自动存进 Chrome 书签，并补上网页标题。</p>
 
-  <section>
-    <h2>1. 创建飞书应用</h2>
-    <p>插件要用你自己的飞书应用来读取"发给自己"的消息。只需设置一次，大约 10 分钟。</p>
-    <details id="guide">
-      <summary>查看步骤</summary>
-      <ol>
-        <li>打开 <a id="consoleLink" href="https://open.feishu.cn/app" target="_blank" rel="noreferrer">飞书开放平台</a>，点击"创建企业自建应用"，名称随意，例如"书签同步"。</li>
-        <li>在"添加应用能力"中添加"机器人"。飞书读取消息的接口要求应用有这项能力，插件不会用它发消息。</li>
-        <li>在"权限管理"中切换到"用户身份"，开通以下权限：
-          <ul id="scopeList"></ul>
-        </li>
-        <li>在"安全设置"的"重定向 URL"中添加下面这个地址：
-          <div class="copy"><code id="redirectUrl"></code><button type="button" id="copyRedirect">复制</button></div>
-        </li>
-        <li>在"版本管理与发布"中创建版本并申请发布。公司飞书可能需要管理员审批。</li>
-        <li>在"凭证与基础信息"中复制 App ID 和 App Secret，填到下面第 2 步。</li>
-      </ol>
-    </details>
+  <!-- Step 1 -->
+  <section class="step" id="step1">
+    <h2><span class="badge"></span>填写飞书应用信息</h2>
+    <div class="body">
+      <p>插件通过你自己的飞书应用读取"发给自己"的消息。还没有应用的话，先按下面的步骤建一个，大约 10 分钟。</p>
+      <details id="guide">
+        <summary>怎么建飞书应用</summary>
+        <ol>
+          <li>打开 <a id="consoleLink" href="https://open.feishu.cn/app" target="_blank" rel="noreferrer">飞书开放平台</a>，点"创建企业自建应用"，名称随意，例如"书签同步"。</li>
+          <li>在"添加应用能力"中添加"机器人"。飞书读取消息的接口要求应用有这项能力，插件不会用它发消息。</li>
+          <li>在"权限管理"中切换到"用户身份"，开通以下权限：<ul id="scopeList"></ul></li>
+          <li>在"安全设置"的"重定向 URL"中添加这个地址：
+            <div class="copy"><code id="redirectUrl"></code><button type="button" id="copyRedirect" class="small">复制</button></div>
+          </li>
+          <li>在"版本管理与发布"中创建版本并申请发布。公司飞书可能需要管理员审批。</li>
+          <li>在"凭证与基础信息"中找到 App ID 和 App Secret，填到下面。</li>
+        </ol>
+      </details>
+      <label>版本
+        <select id="brand">
+          <option value="feishu">飞书（中国）</option>
+          <option value="lark">Lark（国际版）</option>
+        </select>
+      </label>
+      <label>App ID <input id="appId" autocomplete="off" placeholder="cli_xxxxxxxx"></label>
+      <label>App Secret <input id="appSecret" type="password" autocomplete="off"></label>
+      <p class="feedback" id="feedback1"></p>
+      <p class="hint">填完自动保存。App Secret 只保存在这台电脑的浏览器里，不会上传或同步。</p>
+    </div>
   </section>
 
-  <section>
-    <h2>2. 填写应用信息</h2>
-    <label>版本
-      <select id="brand">
-        <option value="feishu">飞书（中国）</option>
-        <option value="lark">Lark（国际版）</option>
-      </select>
-    </label>
-    <label>App ID <input id="appId" autocomplete="off" placeholder="cli_xxxxxxxx"></label>
-    <label>App Secret <input id="appSecret" type="password" autocomplete="off"></label>
-    <p class="hint">App Secret 只保存在这台电脑的浏览器里，不会上传或同步。</p>
-    <button type="button" id="saveApp">保存</button>
+  <!-- Step 2 -->
+  <section class="step" id="step2">
+    <h2><span class="badge"></span>连接飞书</h2>
+    <div class="body">
+      <p id="authStatus">会弹出飞书的授权窗口，在里面点"授权"即可。</p>
+      <button type="button" id="connect">连接飞书</button>
+      <button type="button" id="disconnect" class="link">断开连接</button>
+      <p class="feedback" id="feedback2"></p>
+    </div>
   </section>
 
-  <section>
-    <h2>3. 连接飞书</h2>
-    <p id="authStatus">未连接</p>
-    <button type="button" id="connect">连接飞书</button>
-    <button type="button" id="disconnect" class="secondary">断开连接</button>
-  </section>
+  <!-- Step 3 -->
+  <section class="step" id="step3">
+    <h2><span class="badge"></span>开始同步</h2>
+    <div class="body" id="startChoice">
+      <p>从哪些消息开始搬进书签？</p>
+      <label class="radio"><input type="radio" name="startMode" value="new" checked> 只搬以后新发的链接（推荐）</label>
+      <label class="radio"><input type="radio" name="startMode" value="date"> 从这一天开始：<input type="date" id="startDate"></label>
+      <label class="radio"><input type="radio" name="startMode" value="all"> 搬全部历史消息（可能有上千个链接）</label>
+      <p class="hint">点"开始同步"时，Chrome 会请你允许插件读取网页标题，请点"允许"。</p>
+      <button type="button" id="start">开始同步</button>
+      <p class="feedback" id="feedback3"></p>
+    </div>
+    <div class="body" id="running">
+      <ul id="status" class="status"></ul>
+      <p id="permWarning" class="warning">还没允许读取网页标题，新书签只会显示网址。<button type="button" id="grantPerm" class="small">允许</button></p>
+      <button type="button" id="syncNow">立即同步</button>
+      <button type="button" id="fixTitles" class="secondary">补全所有无标题书签</button>
+      <p class="feedback" id="feedback4"></p>
 
-  <section>
-    <h2>4. 同步设置</h2>
-    <label>书签放在 <select id="parentFolder"></select></label>
-    <label>收件箱文件夹名 <input id="inboxName"></label>
-    <label>同步间隔
-      <select id="interval">
-        <option value="15">每 15 分钟</option>
-        <option value="30">每 30 分钟</option>
-        <option value="60">每小时</option>
-        <option value="180">每 3 小时</option>
-      </select>
-    </label>
-    <label>从这天开始同步 <input id="syncFrom" type="date"></label>
-    <p class="hint">更早的消息不会导入。想导入全部历史，就清空这个日期。</p>
-    <button type="button" id="saveSync">保存</button>
-  </section>
-
-  <section>
-    <h2>5. 网页标题</h2>
-    <p>补标题需要读取网页内容。用的是你浏览器的登录状态，所以知乎这类要登录的网站也能拿到标题。</p>
-    <p id="permStatus"></p>
-    <button type="button" id="grantPerm">允许读取网页标题</button>
-  </section>
-
-  <section>
-    <h2>状态</h2>
-    <ul id="status" class="status"></ul>
-    <button type="button" id="syncNow">立即同步</button>
-    <button type="button" id="fixTitles" class="secondary">补全所有无标题书签</button>
-    <p id="message" class="message"></p>
+      <details id="more">
+        <summary>更多设置</summary>
+        <label>书签放在 <select id="parentFolder"></select></label>
+        <label>收件箱文件夹名 <input id="inboxName"></label>
+        <label>同步频率
+          <select id="interval">
+            <option value="15">每 15 分钟</option>
+            <option value="30">每 30 分钟</option>
+            <option value="60">每小时</option>
+            <option value="180">每 3 小时</option>
+          </select>
+        </label>
+        <p class="feedback" id="feedback5"></p>
+        <p class="hint">改完自动保存。</p>
+        <button type="button" id="restart" class="link">重新选择从哪天开始同步</button>
+      </details>
+    </div>
   </section>
 
   <script type="module" src="options.js"></script>
