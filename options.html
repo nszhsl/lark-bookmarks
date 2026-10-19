@@ -92,6 +92,8 @@
       <label>模型 <input id="llmModel" placeholder="deepseek-chat"></label>
       <p>可以放进的文件夹：</p>
       <div id="targetList" class="checklist"></div>
+      <label class="radio"><input type="checkbox" id="allowNewFolders"> 没有合适的文件夹时，允许大模型新建一个</label>
+      <p class="hint">新文件夹会建在收件箱旁边，名字概括一类主题；分类文件夹最多 20 个，到上限后不再新建。</p>
       <button type="button" id="testClassify" class="secondary">测试一下</button>
       <p class="feedback" id="feedback6"></p>
     </div>

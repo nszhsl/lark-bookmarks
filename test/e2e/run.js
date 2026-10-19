@@ -30,7 +30,7 @@ const server = createServer((req, res) => {
       const request = JSON.parse(body);
       llmCalls.push({ auth: req.headers.authorization, request });
       const user = request.messages.at(-1).content;
-      const answer = user.includes("标题：页面 A") ? "编程开发" : "收件箱";
+      const answer = user.includes("标题：页面 A") ? "编程开发" : user.includes("标题：页面 B") ? "新建：工具推荐" : "收件箱";
       res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ choices: [{ message: { content: answer } }] }));
     });
     return;
@@ -155,7 +155,7 @@ try {
         for (const c of n.children || []) walk(c, n.url ? path : [...path, n.title]);
       };
       walk(tree, []);
-      return out.filter((b) => ["收件箱", "编程开发"].includes(b.path.at(-1)));
+      return out.filter((b) => ["收件箱", "编程开发", "工具推荐"].includes(b.path.at(-1)));
     });
 
   // 1. first sync
@@ -202,11 +202,16 @@ try {
   while (Date.now() < sortDeadline && (await bookmarksIn()).find((b) => b.url === `${base}/a`)?.path.at(-1) !== "编程开发") await sleep(1000);
   inbox = await bookmarksIn();
   assert.equal(inbox.find((b) => b.url === `${base}/a`)?.path.at(-1), "编程开发", "sorted by the model");
-  assert.equal(inbox.find((b) => b.url === `${base}/b`)?.path.at(-1), "收件箱", "unsure ones stay in the inbox");
+  const sortDeadlineB = Date.now() + 30_000;
+  while (Date.now() < sortDeadlineB && (await bookmarksIn()).find((b) => b.url === `${base}/b`)?.path.at(-1) !== "工具推荐") await sleep(1000);
+  inbox = await bookmarksIn();
+  assert.equal(inbox.find((b) => b.url === `${base}/b`)?.path.at(-1), "工具推荐", "model may create a new folder");
+  assert.equal(inbox.find((b) => b.url === `${base}/gbk`)?.path.at(-1), "收件箱", "unsure ones stay in the inbox");
+  assert.match(llmCalls[0].request.messages[0].content, /新建/, "new folders are allowed by default");
   assert.ok(llmCalls.length >= 4, "every new link was offered to the model");
   assert.equal(llmCalls[0].auth, "Bearer sk-test");
   assert.equal(llmCalls[0].request.model, "test-model");
-  assert.match(llmCalls[0].request.messages[1].content, /文件夹：编程开发\n/, "excluded folders are not offered");
+  assert.match(llmCalls[0].request.messages[1].content, /^已有文件夹：编程开发\n/, "excluded folders are not offered");
 
   // 3. a second sync adds nothing; a new message is picked up
   const again = await options.evaluate(() => chrome.runtime.sendMessage({ type: "syncNow" }));

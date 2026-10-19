@@ -294,7 +294,7 @@ async function renderTargets() {
       return label;
     })
   );
-  if (!all.length) $("targetList").textContent = "收件箱旁边还没有其他文件夹。";
+  if (!all.length) $("targetList").textContent = "收件箱旁边还没有其他文件夹。开启下面的新建选项后，大模型会边分类边建文件夹。";
 }
 
 let classifyTimer;
@@ -309,6 +309,7 @@ function saveClassify() {
       llmBaseUrl: $("llmBaseUrl").value.trim(),
       llmApiKey: $("llmApiKey").value.trim(),
       llmModel: $("llmModel").value.trim(),
+      allowNewFolders: $("allowNewFolders").checked,
       classifyExclude: [...hiddenExcluded, ...shown.filter((b) => !b.checked).map((b) => b.dataset.name)],
     });
     flashSaved("feedback6");
@@ -318,7 +319,7 @@ function renderClassifyFields() {
   $("classifyFields").style.display = $("classify").checked ? "" : "none";
   $("testClassify").disabled = !($("llmBaseUrl").value.trim() && $("llmModel").value.trim());
 }
-for (const id of ["classify", "llmBaseUrl", "llmApiKey", "llmModel"]) {
+for (const id of ["classify", "llmBaseUrl", "llmApiKey", "llmModel", "allowNewFolders"]) {
   $(id).addEventListener("input", () => {
     renderClassifyFields();
     saveClassify();
@@ -356,6 +357,7 @@ async function init() {
   $("llmBaseUrl").value = config.llmBaseUrl;
   $("llmApiKey").value = config.llmApiKey;
   $("llmModel").value = config.llmModel;
+  $("allowNewFolders").checked = config.allowNewFolders;
   renderClassifyFields();
   await renderTargets();
   await renderGuide(config.brand);
@@ -369,4 +371,6 @@ chrome.storage.onChanged.addListener((changes) => {
 });
 
 await init();
+// Folders the model creates show up in the checklist right away.
+chrome.bookmarks.onCreated.addListener((_id, node) => node.url || renderTargets());
 setInterval(renderRunning, 60_000); // keep "x 分钟前" and the next sync time current
